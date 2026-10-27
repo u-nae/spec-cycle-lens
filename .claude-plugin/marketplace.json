@@ -1,0 +1,16 @@
+{
+  "name": "spec-cycle-lens",
+  "description": "Personal marketplace for the spec-cycle-lens mod.",
+  "owner": {
+    "name": "unae"
+  },
+  "plugins": [
+    {
+      "name": "spec-cycle-lens",
+      "source": "./",
+      "description": "Read-only lens over a spec-cycle project: the active work item and gate verdict above the prompt, a /lens pane of work items, runs and documents, and the next spec-cycle command suggested (never submitted).",
+      "category": "development",
+      "tags": ["spec-cycle", "mod", "specification", "gate"]
+    }
+  ]
+}

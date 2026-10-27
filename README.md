@@ -22,11 +22,18 @@ process on the host; the two settings that do (`openInEditor`, `specCycleScript`
 
 Checked against Claude Code 2.1.311 (mod API, early access). Needs spec-cycle 0.4.0 or later.
 
-## Run it from the folder
+## Install
 
-```sh
-claude --plugin-dir /path/to/spec-cycle-lens
+At the prompt of a terminal session (`y` to add the marketplace, then a scope):
+
+```text
+/plugin install spec-cycle-lens --marketplace u-nae/spec-cycle-lens
 ```
+
+From a shell: `claude plugin install spec-cycle-lens --marketplace u-nae/spec-cycle-lens`. In the desktop app: + next to
+the prompt box, Plugins, Add marketplace with `u-nae/spec-cycle-lens`, then Add plugin.
+
+While developing, run it from the folder instead: `claude --plugin-dir /path/to/spec-cycle-lens`.
 
 ## Settings (`/config`)
 
