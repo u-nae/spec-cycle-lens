@@ -1,6 +1,6 @@
 {
   "name": "spec-cycle-lens",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "license": "MIT",
   "description": "Read-only lens over a spec-cycle project: the active work item and gate verdict above the prompt, a /lens pane of work items and runs, and the next spec-cycle command suggested (never submitted).",
   "author": {
@@ -44,6 +44,33 @@
       "title": "Snapshot path",
       "description": "Where spec-cycle writes status.json, relative to the project; config.yaml is expected beside it.",
       "default": ".spec-cycle/status.json"
+    },
+    "toasts": {
+      "type": "string",
+      "title": "Toasts",
+      "description": "Announce a verdict change (READY, NEEDS_HUMAN, BLOCKED_AT_LIMIT, done) once, as a toast.",
+      "default": "on",
+      "options": [
+        "on",
+        "off"
+      ]
+    },
+    "openInEditor": {
+      "type": "string",
+      "title": "Open in editor",
+      "description": "How `o` on a document opens it: off copies the path only; auto tries a windowed $VISUAL/$EDITOR, then code/cursor by TERM_PROGRAM, then open (macOS); tmux-nvim opens nvim in a new tmux window. Anything but off runs a process on the host.",
+      "default": "off",
+      "options": [
+        "off",
+        "auto",
+        "tmux-nvim"
+      ]
+    },
+    "specCycleScript": {
+      "type": "string",
+      "title": "spec-cycle script",
+      "description": "Absolute path of spec-cycle.mjs. When set, /lens refresh runs `node <script> status --json --write` in the project; empty keeps refresh read-only.",
+      "default": ""
     }
   }
 }

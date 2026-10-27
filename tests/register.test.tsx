@@ -235,3 +235,62 @@ test('a snapshot at a configured path is read from there', { options: { snapshot
   await $.session.start({ cwd: CWD, surface: 'terminal', isInteractive: true })
   expect(w.suggested).toEqual(['/spec-cycle:verify W01'])
 })
+
+test('toasts: the first read is a baseline, a verdict change is announced once', async ($, on) => {
+  const w = world(on, snapshotFiles())
+  await $.session.start({ cwd: CWD, surface: 'terminal', isInteractive: true })
+  expect(w.toasts).toEqual([])
+  const next = prdSnapshot()
+  next.items[1]!.run!.verdict = 'READY'
+  next.items[1]!.handoff = { usable: true, errors: [], warnings: [], obligations_total: 8 }
+  w.fs.files.set(SNAPSHOT_FILE, { text: JSON.stringify(next), mtimeMs: 6000 })
+  await completeTurn($, 't1')
+  await completeTurn($, 't2')
+  expect(w.toasts).toEqual(['W05 READY · /spec-cycle:implement W05'])
+  next.items[1]!.status = 'done'
+  w.fs.files.set(SNAPSHOT_FILE, { text: JSON.stringify(next), mtimeMs: 7000 })
+  await completeTurn($, 't3')
+  expect(w.toasts).toEqual(['W05 READY · /spec-cycle:implement W05', 'W05 완료'])
+})
+
+test('toasts off announces nothing', { options: { toasts: 'off' } }, async ($, on) => {
+  const w = world(on, snapshotFiles())
+  await $.session.start({ cwd: CWD, surface: 'terminal', isInteractive: true })
+  const next = prdSnapshot()
+  next.items[1]!.run!.verdict = 'BLOCKED_AT_LIMIT'
+  w.fs.files.set(SNAPSHOT_FILE, { text: JSON.stringify(next), mtimeMs: 6000 })
+  await completeTurn($, 't1')
+  expect(w.toasts).toEqual([])
+})
+
+test('/lens refresh runs the configured script in the project and reads the result', { options: { specCycleScript: '/opt/spec-cycle/scripts/spec-cycle.mjs' } }, async ($, on) => {
+  const w = world(on, snapshotFiles())
+  const ran: Array<{ argv: readonly string[]; cwd?: string }> = []
+  on('process.run', (_, e) => {
+    ran.push({ argv: e.argv, cwd: e.init?.cwd })
+    const next = prdSnapshot()
+    next.items[1]!.run!.verdict = 'REVISE'
+    w.fs.files.set(SNAPSHOT_FILE, { text: JSON.stringify(next), mtimeMs: 9000 })
+    return { value: { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+  await $.session.start({ cwd: CWD, surface: 'terminal', isInteractive: true })
+  const text = (await $.command.run({ command: 'lens', args: 'refresh', origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 120 } })).text
+  expect(ran).toEqual([{ argv: ['node', '/opt/spec-cycle/scripts/spec-cycle.mjs', 'status', '--json', '--write'], cwd: CWD }])
+  expect(text).toMatch(/rewritten and read again/)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /REVISE r1\/2/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('/lens refresh without a script never runs a process', async ($, on) => {
+  world(on, snapshotFiles())
+  let processes = 0
+  on('process.run', () => {
+    processes += 1
+    return { value: { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+  await $.session.start({ cwd: CWD, surface: 'terminal', isInteractive: true })
+  const text = (await $.command.run({ command: 'lens', args: 'refresh', origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 120 } })).text
+  expect(text).toMatch(/snapshot read again/)
+  expect(processes).toBe(0)
+})

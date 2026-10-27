@@ -1,9 +1,11 @@
 import { iconSet, statusGlyph } from './icons'
 import { nextCommand } from './next-command'
-import type { Item, LensRead } from './snapshot'
+import type { Item, LensRead, RunInfo } from './snapshot'
 import { truncate } from './text'
 
-export type Tab = 'items' | 'run'
+export type Tab = 'items' | 'run' | 'docs'
+
+export type DocView = { path: string; text: string | null; error: string | null }
 
 export type PaneModel = {
   read: LensRead
@@ -12,15 +14,22 @@ export type PaneModel = {
   pinned: string | null
   icons: string | undefined
   bodyColumns: number
+  doc: DocView | null
+  canOpenInEditor: boolean
+  cwd: string
 }
 
 export type PaneActions = {
   showTab: (tab: Tab) => void
   select: (id: string) => void
   togglePin: (id: string) => void
+  openDoc: (path: string) => void
+  closeDoc: () => void
+  openInEditor: (path: string) => void
+  copyPath: (path: string) => void
 }
 
-type Elements = { Box: any; Text: any; Button: any }
+type Elements = { Box: any; Text: any; Button: any; Markdown: any; Code: any; Link: any }
 
 function stageOf(item: Item): string {
   const next = nextCommand({ hasConfig: true, hasFile: true, snapshot: { items: [item] } as never, active: item })
@@ -126,6 +135,71 @@ function runTab(el: Elements, model: PaneModel) {
   return <Box flexDirection="column">{rows}</Box>
 }
 
+/** The run's artifacts as `[label, path]`, the ones that exist, in reading order. */
+export function artifactList(run: RunInfo): Array<[string, string]> {
+  const a = run.artifacts
+  const list: Array<[string, string]> = []
+  if (a.brief) list.push(['brief', a.brief])
+  if (a.handoff) list.push(['handoff', a.handoff])
+  a.spec_files.forEach((path, index) => list.push([`spec ${index + 1}`, path]))
+  a.critic_reports.forEach((path, index) => list.push([`critic pass ${index + 1}`, path]))
+  if (a.decision_log) list.push(['decision log', a.decision_log])
+  if (a.verification) list.push(['verification', a.verification])
+  return list
+}
+
+export function languageOf(path: string): string {
+  if (path.endsWith('.feature')) return 'gherkin'
+  if (path.endsWith('.yaml') || path.endsWith('.yml')) return 'yaml'
+  if (path.endsWith('.json')) return 'json'
+  return 'text'
+}
+
+function docView(el: Elements, model: PaneModel, doc: DocView, actions: PaneActions) {
+  const { Box, Text, Button, Markdown, Code, Link } = el
+  const absolute = `${model.cwd.replace(/\/+$/, '')}/${doc.path}`
+  const controls = (
+    <Box key="doc-controls" flexDirection="row" gap={1}>
+      <Button key="back" hotkey="b" plain onPress={() => actions.closeDoc()}>back</Button>
+      {model.canOpenInEditor
+        ? <Button key="open" hotkey="o" plain onPress={() => actions.openInEditor(doc.path)}>open in editor</Button>
+        : <Button key="copy" hotkey="c" plain onPress={() => actions.copyPath(doc.path)}>copy path</Button>}
+      <Link key="file-link" href={`file://${absolute}`} label={doc.path} />
+    </Box>
+  )
+  let body
+  if (doc.error) body = <Text color="yellow">{doc.error}</Text>
+  else if (doc.text === null) body = <Text dimColor>읽는 중…</Text>
+  else if (doc.path.endsWith('.md')) body = <Markdown key={`md:${doc.path}`} text={doc.text} />
+  else body = <Code source={doc.text} language={languageOf(doc.path)} path={doc.path} wrap="truncate-end" />
+  return (
+    <Box flexDirection="column">
+      {controls}
+      {body}
+    </Box>
+  )
+}
+
+function docsTab(el: Elements, model: PaneModel, actions: PaneActions) {
+  const { Box, Text, Button } = el
+  if (model.doc) return docView(el, model, model.doc, actions)
+  const item = model.selected
+  if (!item) return <Text dimColor>항목을 고르세요 (Items 탭).</Text>
+  if (!item.run) return <Text dimColor>{`${item.id}: run 없음, 산출물이 없습니다.`}</Text>
+  const list = artifactList(item.run)
+  if (list.length === 0) return <Text dimColor>{`${item.id}: 산출물이 아직 없습니다.`}</Text>
+  return (
+    <Box flexDirection="column">
+      <Text dimColor>{`${item.id} · ${item.run.id} · Enter로 읽기`}</Text>
+      {list.map(([label, path]) => (
+        <Button key={`doc:${path}`} plain onPress={() => actions.openDoc(path)}>
+          <Text bold>{label}</Text> <Text dimColor>{truncate(path, Math.max(12, model.bodyColumns - label.length - 4))}</Text>
+        </Button>
+      ))}
+    </Box>
+  )
+}
+
 export function renderPane(el: Elements, model: PaneModel, actions: PaneActions, now: number) {
   const { Box, Text, Button } = el
   const read = model.read
@@ -133,6 +207,7 @@ export function renderPane(el: Elements, model: PaneModel, actions: PaneActions,
     <Box key="tabs" flexDirection="row" gap={1}>
       <Button key="tab:items" hotkey="1" plain onPress={() => actions.showTab('items')}>Items</Button>
       <Button key="tab:run" hotkey="2" plain onPress={() => actions.showTab('run')}>Run</Button>
+      <Button key="tab:docs" hotkey="3" plain onPress={() => actions.showTab('docs')}>Docs</Button>
       <Text dimColor>{read.snapshot ? `  ${read.snapshot.generated_by.replace(/^spec-cycle@\S+ /, '')} · ${relative(read.snapshot.generated_at, now)}` : ''}</Text>
       {read.isStale ? <Text color="yellow">⚠ 오래됨</Text> : null}
       {read.isBroken ? <Text color="yellow">⚠ JSON</Text> : null}
@@ -141,7 +216,9 @@ export function renderPane(el: Elements, model: PaneModel, actions: PaneActions,
   let body
   if (!read.hasFile && !read.hasConfig) body = <Text dimColor>spec-cycle 프로젝트가 아닙니다. /spec-cycle:init 으로 시작하세요.</Text>
   else if (!read.snapshot) body = <Text dimColor>스냅숏이 없습니다. spec-cycle 커맨드를 한 번 실행하거나 /lens refresh 를 쓰세요.</Text>
-  else body = model.tab === 'items' ? itemsTab(el, model, actions, now) : runTab(el, model)
+  else if (model.tab === 'items') body = itemsTab(el, model, actions, now)
+  else if (model.tab === 'run') body = runTab(el, model)
+  else body = docsTab(el, model, actions)
   return (
     <Box flexDirection="column">
       {header}

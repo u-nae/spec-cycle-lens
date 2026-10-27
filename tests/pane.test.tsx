@@ -70,3 +70,84 @@ test('the pane narrows its cards under 44 columns', async ($, on) => {
   expect(await ui.find({ key: 'item:W05' })).toBeDefined()
   await ui.unmount()
 })
+
+test('the Docs tab lists the run artifacts, reads one in place and comes back with b', async ($, on) => {
+  const snap = prdSnapshot()
+  snap.items[1]!.run!.artifacts = {
+    handoff: null, brief: '.spec-cycle/runs/t-x/spec-brief.md', verification: null, decision_log: null,
+    critic_reports: ['.spec-cycle/runs/t-x/critic-pass-1.yaml'], spec_files: ['.spec-cycle/runs/t-x/specs/revision-1/task-W05.feature'],
+  }
+  const fs = fakeFs(on, {
+    [SNAPSHOT_FILE]: { text: JSON.stringify(snap), mtimeMs: 5000 },
+    [CONFIG_FILE]: { text: '', mtimeMs: 1 },
+    [`${CWD}/.spec-cycle/runs/t-x/spec-brief.md`]: { text: '# Brief\n\nObligations: 3\n', mtimeMs: 1 },
+    [`${CWD}/.spec-cycle/runs/t-x/specs/revision-1/task-W05.feature`]: { text: 'Feature: revisions\n  Scenario: one\n', mtimeMs: 1 },
+  })
+  const copied: string[] = []
+  on('ui.copy', (_, e) => {
+    copied.push(e.text)
+    return { value: { isCopied: true } }
+  })
+  on('ui.toast', () => ({ value: undefined }))
+  await start($, on)
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({ ...PANE, surface })
+    await ui.press({ key: 'tab:docs' })
+    expect(await ui.find({ key: 'doc:.spec-cycle/runs/t-x/spec-brief.md' })).toBeDefined()
+    expect(await ui.find({ key: 'doc:.spec-cycle/runs/t-x/critic-pass-1.yaml' })).toBeDefined()
+    await ui.press({ key: 'doc:.spec-cycle/runs/t-x/spec-brief.md' })
+    expect(await ui.find({ type: 'Markdown' })).toBeDefined()
+    expect(await ui.find({ key: 'copy' })).toBeDefined()
+    expect(await ui.find({ key: 'open' })).toBeUndefined()
+    await ui.press({ key: 'copy' })
+    expect(copied.at(-1)).toBe(`${CWD}/.spec-cycle/runs/t-x/spec-brief.md`)
+    await ui.press({ key: 'back' })
+    expect(await ui.find({ type: 'Markdown' })).toBeUndefined()
+    await ui.press({ key: 'doc:.spec-cycle/runs/t-x/specs/revision-1/task-W05.feature' })
+    expect(await ui.find({ type: 'Code' })).toBeDefined()
+    await ui.press({ key: 'back' })
+    // A listed file that is gone on disk is said, not thrown.
+    await ui.press({ key: 'doc:.spec-cycle/runs/t-x/critic-pass-1.yaml' })
+    expect(await ui.find({ type: 'Text', text: /파일이 없습니다/ })).toBeDefined()
+    await ui.press({ key: 'back' })
+    await ui.unmount()
+  }
+  expect(fs.reads).toBeGreaterThan(1)
+})
+
+test('with openInEditor on, o runs the editor candidates in order and falls back to copying', { options: { openInEditor: 'auto' } }, async ($, on) => {
+  const snap = prdSnapshot()
+  snap.items[1]!.run!.artifacts.brief = '.spec-cycle/runs/t-x/spec-brief.md'
+  fakeFs(on, {
+    [SNAPSHOT_FILE]: { text: JSON.stringify(snap), mtimeMs: 5000 },
+    [CONFIG_FILE]: { text: '', mtimeMs: 1 },
+    [`${CWD}/.spec-cycle/runs/t-x/spec-brief.md`]: { text: '# Brief\n', mtimeMs: 1 },
+  })
+  mock.env(on, { VISUAL: 'code --wait', TERM_PROGRAM: 'vscode', OSTYPE: 'darwin24' })
+  const ran: string[][] = []
+  const toasts: string[] = []
+  const copied: string[] = []
+  on('process.run', (_, e) => {
+    ran.push([...e.argv])
+    return { value: { exitCode: ran.length === 1 ? 1 : 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+  on('ui.toast', (_, e) => {
+    toasts.push(e.text)
+    return { value: undefined }
+  })
+  on('ui.copy', (_, e) => {
+    copied.push(e.text)
+    return { value: { isCopied: true } }
+  })
+  await start($, on)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'tab:docs' })
+  await ui.press({ key: 'doc:.spec-cycle/runs/t-x/spec-brief.md' })
+  expect(await ui.find({ key: 'open' })).toBeDefined()
+  await ui.press({ key: 'open' })
+  // VISUAL `code --wait` and TERM_PROGRAM vscode collapse to one `code`; it fails, so `open` (macOS) runs next.
+  expect(ran).toEqual([['code', `${CWD}/.spec-cycle/runs/t-x/spec-brief.md`], ['open', `${CWD}/.spec-cycle/runs/t-x/spec-brief.md`]])
+  expect(toasts.at(-1)).toMatch(/^open로 열었습니다/)
+  expect(copied).toEqual([])
+  await ui.unmount()
+})
