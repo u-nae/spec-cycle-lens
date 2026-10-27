@@ -1,0 +1,24 @@
+{
+  "name": "spec-cycle-lens",
+  "version": "0.0.1",
+  "license": "MIT",
+  "description": "Read-only lens over a spec-cycle project: a band above the prompt, a /lens pane and a suggested next command. Spike: fixed text, no snapshot yet.",
+  "author": { "name": "unae" },
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "band": {
+      "type": "string",
+      "title": "Band",
+      "description": "Draw the one-line band above the prompt.",
+      "default": "on",
+      "options": ["on", "off"]
+    },
+    "suggest": {
+      "type": "string",
+      "title": "Suggest next command",
+      "description": "Propose the next spec-cycle command in the prompt box (Tab to take). Never submits.",
+      "default": "on",
+      "options": ["on", "off"]
+    }
+  }
+}
