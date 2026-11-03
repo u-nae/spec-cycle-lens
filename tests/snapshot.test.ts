@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { EMPTY_READ, isStale, parseSnapshot, readLens, readSignature, snapshotKey } from '../hooks/snapshot'
+import { EMPTY_READ, isStale, parseSnapshot, projectRootOf, readLens, readSignature, snapshotKey } from '../hooks/snapshot'
 import type { Fs } from '../hooks/snapshot'
 import { prdSnapshot } from './fixtures'
 
@@ -90,4 +90,31 @@ test('readSignature changes with what the band draws and not otherwise', async (
   const changed = { ...base, snapshot: { ...prdSnapshot(), items: prdSnapshot().items.map(i => (i.id === 'W05' ? { ...i, status: 'in-progress' } : i)) } }
   expect(readSignature(changed)).not.toBe(readSignature(base))
   expect(readSignature({ ...base, isStale: true })).not.toBe(readSignature(base))
+})
+
+test('projectRootOf strips the config directory from the snapshot folder', async () => {
+  expect(projectRootOf('/p', '.spec-cycle/status.json', '.spec-cycle/config.yaml')).toBe('/p')
+  expect(projectRootOf('/p', 'pickera-api/.spec-cycle/status.json', '.spec-cycle/config.yaml')).toBe('/p/pickera-api')
+  expect(projectRootOf('/p', 'tmp/gate/status.json', 'tmp/gate/config.yaml')).toBe('/p')
+  expect(projectRootOf('/p', '/x/api/.spec-cycle/status.json', '.spec-cycle/config.yaml')).toBe('/x/api')
+  // Before a snapshot exists the config path is unknown: a `.spec-cycle` folder still names its parent.
+  expect(projectRootOf('/p', 'pickera-api/.spec-cycle/status.json', null)).toBe('/p/pickera-api')
+  expect(projectRootOf('/p', 'tmp/gate/status.json', null)).toBe('/p')
+  // A snapshot whose folder does not end in its own config directory falls back to the session folder.
+  expect(projectRootOf('/p', 'a/b/status.json', '.spec-cycle/config.yaml')).toBe('/p')
+})
+
+test('readLens checks the inputs under the project folder, not the session folder', async () => {
+  const paths = { cwd: '/p', snapshotPath: 'api/.spec-cycle/status.json', configPath: 'api/.spec-cycle/config.yaml' }
+  const files = {
+    '/p/api/.spec-cycle/status.json': { text: JSON.stringify(prdSnapshot()), mtimeMs: 5000 },
+    '/p/api/.spec-cycle/config.yaml': { text: '', mtimeMs: 1 },
+    '/p/api/docs/PRD.md': { text: '#', mtimeMs: 1000 },
+    // The parent has a PRD of its own, newer than the snapshot: it must not count.
+    '/p/docs/PRD.md': { text: '#', mtimeMs: 9000 },
+  }
+  const fresh = await readLens(memoryFs(files).fs, paths)
+  expect(fresh.isStale).toBe(false)
+  const changed = await readLens(memoryFs({ ...files, '/p/api/docs/PRD.md': { text: '##', mtimeMs: 2000 } }).fs, paths)
+  expect(changed.isStale).toBe(true)
 })
