@@ -90,6 +90,26 @@ export type LensRead = {
 
 export const EMPTY_READ: LensRead = { hasConfig: false, hasFile: false, snapshot: null, key: null, isBroken: false, isStale: false }
 
+function parentOf(path: string): string {
+  const index = path.replace(/\/+$/, '').lastIndexOf('/')
+  return index <= 0 ? (path.startsWith('/') ? '/' : '.') : path.slice(0, index)
+}
+
+/**
+ * The spec-cycle project folder, which every path in the snapshot is relative to. spec-cycle writes
+ * status.json beside its config, so the snapshot folder minus the config's own folder is the project:
+ * `pickera-api/.spec-cycle/status.json` with `.spec-cycle/config.yaml` is `<cwd>/pickera-api`. Without a
+ * snapshot (`configPath` null) a `.spec-cycle` folder names its parent; anything else is the session folder.
+ */
+export function projectRootOf(cwd: string, snapshotPath: string, configPath: string | null): string {
+  const folder = parentOf(join(cwd, snapshotPath))
+  if (configPath === null) return folder.endsWith('/.spec-cycle') ? parentOf(folder) : cwd.replace(/\/+$/, '')
+  const configFolder = parentOf(configPath).replace(/^\.\//, '')
+  if (configFolder === '.') return folder
+  if (folder.endsWith(`/${configFolder}`)) return folder.slice(0, folder.length - configFolder.length - 1) || '/'
+  return cwd.replace(/\/+$/, '')
+}
+
 export function join(cwd: string, relative: string): string {
   if (relative.startsWith('/')) return relative
   return `${cwd.replace(/\/+$/, '')}/${relative}`
@@ -139,18 +159,23 @@ export async function isStale(fs: Fs, cwd: string, snapshot: Snapshot): Promise<
  * Reads the snapshot. With `previous` whose key matches the file, the document is reused and only the
  * freshness is checked again. A file that stops parsing keeps the previous document and marks the read broken.
  */
+/** The project folder of this read: the snapshot's own config path when there is one. */
+export function rootFor(paths: Paths, snapshot: Snapshot | null): string {
+  return projectRootOf(paths.cwd, paths.snapshotPath, snapshot?.config?.path ?? null)
+}
+
 export async function readLens(fs: Fs, paths: Paths, previous: LensRead = EMPTY_READ): Promise<LensRead> {
   const hasConfig = await fs.exists(join(paths.cwd, paths.configPath))
   const key = await snapshotKey(fs, paths)
   if (key === null) return { ...EMPTY_READ, hasConfig }
   if (key === previous.key && previous.snapshot) {
-    return { ...previous, hasConfig, hasFile: true, isStale: await isStale(fs, paths.cwd, previous.snapshot) }
+    return { ...previous, hasConfig, hasFile: true, isStale: await isStale(fs, rootFor(paths, previous.snapshot), previous.snapshot) }
   }
   const snapshot = parseSnapshot(await fs.read(join(paths.cwd, paths.snapshotPath)))
   if (snapshot === null) {
     return { hasConfig, hasFile: true, snapshot: previous.snapshot, key, isBroken: true, isStale: previous.isStale }
   }
-  return { hasConfig, hasFile: true, snapshot, key, isBroken: false, isStale: await isStale(fs, paths.cwd, snapshot) }
+  return { hasConfig, hasFile: true, snapshot, key, isBroken: false, isStale: await isStale(fs, rootFor(paths, snapshot), snapshot) }
 }
 
 /** A short signature of what the band and pane draw from a read; a changed signature is worth a redraw. */

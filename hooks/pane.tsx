@@ -16,7 +16,8 @@ export type PaneModel = {
   bodyColumns: number
   doc: DocView | null
   canOpenInEditor: boolean
-  cwd: string
+  /** The spec-cycle project folder the snapshot paths are relative to. */
+  root: string
 }
 
 export type PaneActions = {
@@ -157,7 +158,7 @@ export function languageOf(path: string): string {
 
 function docView(el: Elements, model: PaneModel, doc: DocView, actions: PaneActions) {
   const { Box, Text, Button, Markdown, Code, Link } = el
-  const absolute = `${model.cwd.replace(/\/+$/, '')}/${doc.path}`
+  const absolute = `${model.root.replace(/\/+$/, '')}/${doc.path}`
   const controls = (
     <Box key="doc-controls" flexDirection="row" gap={1}>
       <Button key="back" hotkey="b" plain onPress={() => actions.closeDoc()}>back</Button>

@@ -88,7 +88,9 @@ gitignore 목록에도 포함되어 있습니다.
 | `/lens` | 패널을 엽니다 |
 | `/lens pin W05` | band와 패널이 W05를 따라갑니다. 프로젝트별로 세션을 넘어 기억합니다 |
 | `/lens unpin` | 고정을 풀고 다시 스냅숏의 활성 항목을 따릅니다 |
-| `/lens refresh` | `status.json`을 다시 읽습니다. `specCycleScript`가 설정되어 있으면 먼저 `status --json --write`를 실행해 파일을 새로 만듭니다 |
+| `/lens refresh` | `status.json`을 다시 읽습니다. `specCycleScript`가 설정되어 있으면 먼저 프로젝트 폴더에서 `status --json --write`를 실행해 파일을 새로 만듭니다 |
+| `/lens off` | 이 세션에서만 band, 다음 명령 제안, 토스트를 끕니다. resume해도 유지되고 다른 세션은 그대로입니다. `/lens`로 패널은 계속 열 수 있습니다 |
+| `/lens on` | 이 세션에서 다시 켭니다. 꺼져 있는 동안 바뀐 판정은 토스트로 다시 알리지 않습니다 |
 
 활성 항목은 고정이 없을 때 run이 가장 최근인 `in-progress` → run이 있고 `done`이 아닌 항목(최근 갱신 순) →
 의존성이 모두 끝난 첫 `pending` 순으로 고릅니다. 모두 `done`이면 band에 `모두 완료 n/n`이 뜹니다.
@@ -112,7 +114,7 @@ mod는 파일을 감시하지 않고 다음 때에만 `status.json`을 읽습니
 | `toasts` | `on`, `off` | `on` | 판정 변경 토스트 |
 | `staleWarning` | `on`, `off` | `on` | `⚠ 스냅숏 오래됨` 표시와 1분마다의 기준 문서 확인. 구현 중 PRD·결정 기록을 자주 고친다면 `off` |
 | `icons` | `unicode`, `nerd`, `emoji` | `unicode` | band와 패널의 글리프. Nerd Font를 쓰면 `nerd` |
-| `snapshotPath` | 프로젝트 기준 상대 경로 | `.spec-cycle/status.json` | `config.yaml`이 같은 디렉터리에 있어야 합니다 |
+| `snapshotPath` | 세션 폴더 기준 상대 경로 또는 절대 경로 | `.spec-cycle/status.json` | `config.yaml`이 같은 디렉터리에 있어야 합니다. 상위 폴더에서 세션을 열고 하위 프로젝트를 볼 때는 `pickera-api/.spec-cycle/status.json`처럼 적습니다. Docs 탭, 경로 복사, 편집기, 오래됨 판정, refresh가 모두 그 프로젝트 폴더를 기준으로 동작합니다 |
 | `openInEditor` | `off`, `auto`, `tmux-nvim` | `off` | Docs 탭의 `o`. `off`는 경로 복사만, `auto`는 창이 있는 `$VISUAL`/`$EDITOR` → `TERM_PROGRAM`에 맞는 `code`/`cursor` → macOS `open` 순, `tmux-nvim`은 새 tmux 창에 nvim |
 | `specCycleScript` | `spec-cycle.mjs` 절대 경로 | 비움 | 설정하면 `/lens refresh`가 `node <경로> status --json --write`를 실행 |
 
@@ -129,6 +131,8 @@ mod는 파일을 감시하지 않고 다음 때에만 `status.json`을 읽습니
 | `⚠ 스냅숏 오래됨` | 스냅숏 뒤에 `config.yaml`의 `baseline` 문서, `work_items` 파일, `decision_records` 디렉터리 중 하나가 바뀌었습니다. 다음 spec-cycle 명령이 끝나면 사라지고, `specCycleScript`를 설정해 두면 `/lens refresh`로 바로 지워집니다. 표시 자체를 끄려면 `staleWarning`을 `off` |
 | 명령이 끝났는데 band가 그대로 | 턴 종료 시 다시 읽습니다. 바로 보려면 `/lens refresh` |
 | 패널이 너무 좁음 | 패널은 터미널 폭에 맞춰 카드 테두리와 세부 줄을 생략합니다. 창을 넓히거나 데스크톱 앱에서 쓰면 전부 보입니다 |
+| 상위 폴더 세션에서 Docs 문서가 `파일이 없습니다` | 0.2.1 이하의 문제입니다. 0.2.2부터는 `snapshotPath`가 가리키는 프로젝트 폴더를 기준으로 엽니다 |
+| spec-cycle을 쓰지 않는 세션에도 보임 | 그 세션에서 `/lens off`. 폴더 단위로 끄려면 그 폴더에서 `claude plugin disable spec-cycle-lens@spec-cycle-lens --scope local` |
 | 수정한 mod가 반영 안 됨 | `/reload-plugins` 또는 새 세션 |
 
 ## 개발

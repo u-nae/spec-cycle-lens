@@ -9,12 +9,12 @@ import { pickActive } from './active'
 import { bandModel, layoutBand, renderBand } from './band'
 import { editorCandidates, editorMode } from './editor'
 import type { EditorMode } from './editor'
-import { fsPort, readPin, writePin } from './host'
+import { fsPort, readOff, readPin, writeOff, writePin } from './host'
 import { nextCommand } from './next-command'
 import type { Next } from './next-command'
 import { renderPane } from './pane'
 import type { DocView, Tab } from './pane'
-import { EMPTY_READ, isStale, join, readLens, readSignature, snapshotKey } from './snapshot'
+import { EMPTY_READ, isStale, join, readLens, readSignature, rootFor, snapshotKey } from './snapshot'
 import type { LensRead, Paths } from './snapshot'
 import { transitions } from './transitions'
 
@@ -49,10 +49,17 @@ type Lens = {
   current: LensRead
   signature: string
   pinned: string | null
+  /** `/lens off`: this session draws no band, suggests nothing and raises no toast. */
+  off: boolean
   turnTimer: Timer | null
   tickTimer: Timer | null
   /** Documents read for the Docs tab, by repository-relative path. */
   docs: Map<string, DocView>
+}
+
+/** The spec-cycle project folder the snapshot's paths are relative to; the session folder only by default. */
+function rootOf(lens: Lens): string {
+  return lens.paths ? rootFor(lens.paths, lens.current.snapshot) : ''
 }
 
 function dirname(path: string): string {
@@ -70,6 +77,8 @@ async function announce($: EngineInterface, lens: Lens): Promise<void> {
   const previous = await read($, stages)
   const { baseline, toasts } = transitions(previous, lens.current.snapshot)
   await update($, stages, () => baseline)
+  // While off the baseline still moves, so `/lens on` does not replay what happened meanwhile.
+  if (lens.off) return
   for (const text of toasts) $.ui.toast(text)
 }
 
@@ -93,7 +102,7 @@ async function reload($: EngineInterface, lens: Lens, full: boolean): Promise<vo
 
 async function refreshStale($: EngineInterface, lens: Lens): Promise<void> {
   if (lens.staleOn && lens.paths && lens.current.snapshot) {
-    const stale = await isStale(fsPort($), lens.paths.cwd, lens.current.snapshot)
+    const stale = await isStale(fsPort($), rootOf(lens), lens.current.snapshot)
     if (stale !== lens.current.isStale) lens.current = { ...lens.current, isStale: stale }
   }
   await bump($)
@@ -105,7 +114,7 @@ function nextOf(lens: Lens): Next {
 }
 
 async function suggest($: EngineInterface, lens: Lens): Promise<void> {
-  if (!lens.suggestOn) return
+  if (!lens.suggestOn || lens.off) return
   const text = nextOf(lens).suggest
   if (text === null || text === (await read($, lastSuggested))) return
   await update($, lastSuggested, () => text)
@@ -115,6 +124,12 @@ async function suggest($: EngineInterface, lens: Lens): Promise<void> {
 function stopTurnTimer(lens: Lens): void {
   lens.turnTimer?.cancel()
   lens.turnTimer = null
+}
+
+async function setOff($: EngineInterface, lens: Lens, off: boolean): Promise<void> {
+  lens.off = off
+  await writeOff($, off)
+  await bump($)
 }
 
 async function setPin($: EngineInterface, lens: Lens, id: string | null): Promise<void> {
@@ -131,7 +146,7 @@ function openPane($: EngineInterface) {
 async function openDoc($: EngineInterface, lens: Lens, path: string): Promise<void> {
   if (!lens.paths) return
   const fs = fsPort($)
-  const file = join(lens.paths.cwd, path)
+  const file = join(rootOf(lens), path)
   let doc: DocView = { path, text: null, error: null }
   try {
     if (!(await fs.exists(file))) doc = { path, text: null, error: `파일이 없습니다: ${path}` }
@@ -145,7 +160,7 @@ async function openDoc($: EngineInterface, lens: Lens, path: string): Promise<vo
 }
 
 async function copyPath($: EngineInterface, lens: Lens, path: string): Promise<void> {
-  const absolute = lens.paths ? join(lens.paths.cwd, path) : path
+  const absolute = lens.paths ? join(rootOf(lens), path) : path
   const copied = await $.ui.copy({ text: absolute })
   $.ui.toast(copied.isCopied ? `경로를 복사했습니다: ${path}` : `복사할 수 없습니다 (${copied.reason}): ${absolute}`)
 }
@@ -153,7 +168,7 @@ async function copyPath($: EngineInterface, lens: Lens, path: string): Promise<v
 // PRD 6.8: a windowed $VISUAL/$EDITOR, then code/cursor by TERM_PROGRAM, then open; each a 10 s process.
 async function openInEditor($: EngineInterface, lens: Lens, path: string): Promise<void> {
   if (lens.editor === 'off' || !lens.paths) return copyPath($, lens, path)
-  const absolute = join(lens.paths.cwd, path)
+  const absolute = join(rootOf(lens), path)
   const env = {
     visual: await $.env.get('VISUAL'),
     editor: await $.env.get('EDITOR'),
@@ -163,7 +178,7 @@ async function openInEditor($: EngineInterface, lens: Lens, path: string): Promi
   }
   for (const argv of editorCandidates(lens.editor, env, absolute)) {
     try {
-      const ran = await $.process.run(argv, { cwd: lens.paths.cwd, timeoutMs: EDITOR_TIMEOUT_MS })
+      const ran = await $.process.run(argv, { cwd: rootOf(lens), timeoutMs: EDITOR_TIMEOUT_MS })
       if (ran.exitCode === 0) {
         $.ui.toast(`${argv[0]}로 열었습니다: ${path}`)
         return
@@ -178,7 +193,8 @@ async function openInEditor($: EngineInterface, lens: Lens, path: string): Promi
 // PRD 6.9: with a configured script, refresh runs it; without one, refresh only reads the file again.
 async function refresh($: EngineInterface, lens: Lens): Promise<string> {
   if (lens.script !== '' && lens.paths) {
-    const ran = await $.process.run(['node', lens.script, 'status', '--json', '--write'], { cwd: lens.paths.cwd, timeoutMs: REFRESH_TIMEOUT_MS })
+    // `status` takes the project from its working directory, so it runs in the project folder.
+    const ran = await $.process.run(['node', lens.script, 'status', '--json', '--write'], { cwd: rootOf(lens), timeoutMs: REFRESH_TIMEOUT_MS })
     if (ran.exitCode !== 0) {
       await reload($, lens, true)
       return `spec-cycle lens: status --write failed (exit ${ran.exitCode}): ${ran.stderr.trim().split('\n')[0] ?? ''}`
@@ -207,6 +223,7 @@ export const register: Register = (on, options) => {
     current: EMPTY_READ,
     signature: '',
     pinned: null,
+    off: false,
     turnTimer: null,
     tickTimer: null,
     docs: new Map(),
@@ -217,9 +234,10 @@ export const register: Register = (on, options) => {
     await $.command.register({
       name: 'lens',
       description: 'spec-cycle lens: work items, runs and the next command',
-      argumentHint: '[pin <id> | unpin | refresh]',
+      argumentHint: '[pin <id> | unpin | refresh | off | on]',
     })
     lens.pinned = await readPin($, e.cwd)
+    lens.off = await readOff($)
     await reload($, lens, true)
     lens.tickTimer?.cancel()
     if (lens.staleOn) {
@@ -233,6 +251,8 @@ export const register: Register = (on, options) => {
 
   on('session.end', ($, e, next) => {
     stopTurnTimer(lens)
+    // After /clear the process goes on under a new session id, which has no switch of its own.
+    if (e.reason === 'clear') lens.off = false
     if (e.reason !== 'clear') {
       lens.tickTimer?.cancel()
       lens.tickTimer = null
@@ -276,6 +296,15 @@ export const register: Register = (on, options) => {
       return { text: 'spec-cycle lens: pin released; the active item follows the snapshot again.' }
     }
     if (verb === 'refresh') return { text: await refresh($, lens) }
+    if (verb === 'off') {
+      await setOff($, lens, true)
+      return { text: 'spec-cycle lens: off for this session (band, suggestions, toasts). /lens still opens the pane; /lens on brings it back.' }
+    }
+    if (verb === 'on') {
+      await setOff($, lens, false)
+      await suggest($, lens)
+      return { text: 'spec-cycle lens: on again for this session.' }
+    }
     const placed = await openPane($)
     return { text: placed.isPlaced ? 'spec-cycle lens pane opened.' : `spec-cycle lens pane is waiting for room (${placed.reason}).` }
   }).catch(() => ({ text: 'spec-cycle lens: the command failed; see the debug log.' }))
@@ -283,7 +312,7 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     await read($, version)
     const below = await next(e)
-    if (!lens.bandOn || e.props.hasSurvey) return below
+    if (!lens.bandOn || lens.off || e.props.hasSurvey) return below
     const model = bandModel(lens.current, lens.pinned, lens.icons)
     if (model === null) return below
     const segments = layoutBand(model, e.props.bodyColumns)
@@ -303,7 +332,7 @@ export const register: Register = (on, options) => {
   // With a draft in the box the suggestion cannot show, so the command rides on the hint line instead.
   on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
     await read($, version)
-    if (!lens.suggestOn || !e.props.isDraft || e.props.isWorking) return next(e)
+    if (!lens.suggestOn || lens.off || !e.props.isDraft || e.props.isWorking) return next(e)
     const text = nextOf(lens).suggest
     if (text === null) return next(e)
     return next({ ...e, props: { ...e.props, tail: `next: ${text}` } })
@@ -329,7 +358,7 @@ export const register: Register = (on, options) => {
         bodyColumns: e.props.bodyColumns,
         doc,
         canOpenInEditor: lens.editor !== 'off',
-        cwd: lens.paths?.cwd ?? '',
+        root: rootOf(lens),
       },
       {
         showTab: shown => {

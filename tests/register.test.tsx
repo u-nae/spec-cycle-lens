@@ -308,3 +308,95 @@ test('/lens refresh without a script never runs a process', async ($, on) => {
   expect(text).toMatch(/snapshot read again/)
   expect(processes).toBe(0)
 })
+
+const API = `${CWD}/pickera-api`
+
+test('a project below the session folder: documents, copies and refresh use the project folder', { options: { snapshotPath: 'pickera-api/.spec-cycle/status.json', specCycleScript: '/opt/spec-cycle/scripts/spec-cycle.mjs' } }, async ($, on) => {
+  const snap = prdSnapshot()
+  snap.items[1]!.run!.artifacts.brief = '.spec-cycle/runs/t-x/spec-brief.md'
+  const w = world(on, {
+    [`${API}/.spec-cycle/status.json`]: { text: JSON.stringify(snap), mtimeMs: 5000 },
+    [`${API}/.spec-cycle/config.yaml`]: { text: '', mtimeMs: 1 },
+    [`${API}/.spec-cycle/runs/t-x/spec-brief.md`]: { text: '# Brief in the api\n', mtimeMs: 1 },
+  })
+  const copied: string[] = []
+  on('ui.copy', (_, e) => {
+    copied.push(e.text)
+    return { value: { isCopied: true } }
+  })
+  const ran: Array<string | undefined> = []
+  on('process.run', (_, e) => {
+    ran.push(e.init?.cwd)
+    return { value: { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+  await $.session.start({ cwd: CWD, surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'tab:docs' })
+  await ui.press({ key: 'doc:.spec-cycle/runs/t-x/spec-brief.md' })
+  expect(await ui.find({ type: 'Markdown' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /파일이 없습니다/ })).toBeUndefined()
+  await ui.press({ key: 'copy' })
+  expect(copied.at(-1)).toBe(`${API}/.spec-cycle/runs/t-x/spec-brief.md`)
+  await ui.unmount()
+  await $.command.run({ command: 'lens', args: 'refresh', origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 120 } })
+  expect(ran).toEqual([API])
+  expect(w.toasts.some(text => text.startsWith('경로를 복사했습니다'))).toBe(true)
+})
+
+async function lensCommand($: Engine, args: string) {
+  return (await $.command.run({ command: 'lens', args, origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 120 } })).text
+}
+
+test('/lens off hides the band, the suggestion, the hint and the toasts for this session only, across a resume', async ($, on) => {
+  const w = world(on, snapshotFiles())
+  let sessionId = 's-front'
+  on('session.id', () => ({ value: sessionId }))
+  await $.session.start({ cwd: CWD, surface: 'terminal', isInteractive: true })
+  expect(w.suggested).toEqual(['/spec-cycle:run W05'])
+  expect(await lensCommand($, 'off')).toMatch(/off for this session/)
+  let band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await band.find({ key: 'lens-band' })).toBeUndefined()
+  await band.unmount()
+  const hint = await $.ui.mount({ ...HINT, surface: 'terminal' })
+  expect(JSON.stringify(await hint.drawn())).not.toMatch(/next: /)
+  await hint.unmount()
+  const next = prdSnapshot()
+  next.items[1]!.run!.verdict = 'READY'
+  next.items[1]!.handoff = { usable: true, errors: [], warnings: [], obligations_total: 8 }
+  w.fs.files.set(SNAPSHOT_FILE, { text: JSON.stringify(next), mtimeMs: 6000 })
+  await completeTurn($, 't1')
+  expect(w.toasts).toEqual([])
+  expect(w.suggested).toEqual(['/spec-cycle:run W05'])
+  // The pane still opens on request.
+  expect(await lensCommand($, '')).toMatch(/pane opened/)
+  // A resume keeps the session id, and the lens stays off.
+  await $.session.start({ cwd: CWD, surface: 'terminal', isInteractive: true })
+  band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await band.find({ key: 'lens-band' })).toBeUndefined()
+  await band.unmount()
+  // Another session in the same folder is not affected.
+  sessionId = 's-api'
+  await $.session.start({ cwd: CWD, surface: 'terminal', isInteractive: true })
+  band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await band.find({ key: 'lens-band' })).toBeDefined()
+  await band.unmount()
+})
+
+test('/lens on brings the lens back without replaying the verdicts it missed', async ($, on) => {
+  const w = world(on, snapshotFiles())
+  on('session.id', () => ({ value: 's1' }))
+  await $.session.start({ cwd: CWD, surface: 'terminal', isInteractive: true })
+  await lensCommand($, 'off')
+  const next = prdSnapshot()
+  next.items[1]!.run!.verdict = 'READY'
+  next.items[1]!.handoff = { usable: true, errors: [], warnings: [], obligations_total: 8 }
+  w.fs.files.set(SNAPSHOT_FILE, { text: JSON.stringify(next), mtimeMs: 6000 })
+  await completeTurn($, 't1')
+  expect(await lensCommand($, 'on')).toMatch(/on again/)
+  await completeTurn($, 't2')
+  expect(w.toasts).toEqual([])
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await band.find({ key: 'lens-band' })).toBeDefined()
+  await band.unmount()
+  expect(w.suggested.at(-1)).toBe('/spec-cycle:implement W05')
+})
