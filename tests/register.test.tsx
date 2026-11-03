@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { TestBody } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { BAND, CONFIG_FILE, CWD, HINT, SNAPSHOT_FILE, fakeFs, item, prdSnapshot, run, snapshot } from './fixtures'
+import { BAND, CONFIG_FILE, CWD, HINT, PANE, SNAPSHOT_FILE, fakeFs, item, prdSnapshot, run, snapshot } from './fixtures'
 import type { FakeFs } from './fixtures'
 
 type Engine = Parameters<TestBody>[0]
@@ -172,6 +172,20 @@ test('a stale snapshot is marked after the minute tick without reading the file'
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect(await ui.find({ type: 'Text', text: /스냅숏 오래됨/ })).toBeDefined()
   await ui.unmount()
+})
+
+test('staleWarning off hides the stale mark in the band and the pane and skips the minute tick', { options: { staleWarning: 'off' } }, async ($, on) => {
+  const w = world(on, { ...snapshotFiles(), [`${CWD}/docs/PRD.md`]: { text: '##', mtimeMs: 9000 } })
+  await $.session.start({ cwd: CWD, surface: 'terminal', isInteractive: true })
+  await w.clock.advance(60_000)
+  expect(w.fs.reads).toBe(1)
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await band.find({ type: 'Text', text: /W05/ })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: /스냅숏 오래됨/ })).toBeUndefined()
+  await band.unmount()
+  const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await pane.find({ type: 'Text', text: /오래됨/ })).toBeUndefined()
+  await pane.unmount()
 })
 
 test('the hint line carries the command while a draft is typed', async ($, on) => {

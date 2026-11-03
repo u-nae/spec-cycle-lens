@@ -68,13 +68,13 @@ function itemCard(el: Elements, model: PaneModel, item: Item, actions: PaneActio
       <Text bold>{model.pinned === item.id ? `📌${item.id}` : item.id}</Text>{' '}
       <Text>{truncate(item.title, titleRoom)}</Text>{' '}
       <Text inverse>{` ${stageOf(item)} `}</Text>
-      {compact ? null : <Text dimColor>{`  ${details}`}</Text>}
+      {compact ? null : <Text>{`  ${details}`}</Text>}
     </Button>
   )
   return (
     <Box key={`card:${item.id}`} flexDirection="column" borderStyle={narrow ? undefined : 'round'} borderDimColor paddingX={narrow ? 0 : 1}>
       {head}
-      {compact && details ? <Text dimColor>{`  ${details}`}</Text> : null}
+      {compact && details ? <Text>{`  ${details}`}</Text> : null}
     </Box>
   )
 }
@@ -102,7 +102,7 @@ function runTab(el: Elements, model: PaneModel) {
   const run = item.run
   const rows: any[] = [
     <Text key="h" bold>{`${item.id} ${item.title}`}</Text>,
-    <Text key="s" dimColor>{`status ${item.status}${item.priority ? ` · ${item.priority}` : ''}${item.dependencies.length ? ` · deps ${item.dependencies.join(', ')}` : ''}`}</Text>,
+    <Text key="s">{`status ${item.status}${item.priority ? ` · ${item.priority}` : ''}${item.dependencies.length ? ` · deps ${item.dependencies.join(', ')}` : ''}`}</Text>,
   ]
   if (!run) {
     rows.push(<Text key="nr" dimColor>run 없음 · /spec-cycle:run {item.id}</Text>)
@@ -110,27 +110,27 @@ function runTab(el: Elements, model: PaneModel) {
     rows.push(<Text key="r">{`run ${run.id} · ${run.route ?? '-'} · r${run.revision_count ?? '?'}/${run.max_revisions ?? '?'} · pass ${run.critic_passes} · ${run.verdict ?? '비평 전'}`}</Text>)
     if (run.findings) {
       const f = run.findings
-      rows.push(<Text key="f" dimColor>{`findings critical ${f.critical} · major ${f.major} · minor ${f.minor} · note ${f.note}`}</Text>)
+      rows.push(<Text key="f">{`findings critical ${f.critical} · major ${f.major} · minor ${f.minor} · note ${f.note}`}</Text>)
     }
     for (const question of run.open_questions) {
       rows.push(
         <Box key={`q:${question.question_id}`} flexDirection="column" paddingLeft={1}>
           <Text color="yellow">{`? ${question.question_id}${question.blocking ? ' (blocking)' : ''}: ${question.question ?? ''}`}</Text>
           <Text>{`  권장 ${question.recommended_default ?? '-'}${question.recommended_label ? ` ${question.recommended_label}` : ''}`}</Text>
-          {question.recommendation_rationale ? <Text dimColor>{`  ${truncate(question.recommendation_rationale, Math.max(20, model.bodyColumns - 4))}`}</Text> : null}
+          {question.recommendation_rationale ? <Text>{`  ${truncate(question.recommendation_rationale, Math.max(20, model.bodyColumns - 4))}`}</Text> : null}
         </Box>,
       )
     }
     if (item.handoff) {
       rows.push(<Text key="ho" color={item.handoff.usable ? 'green' : 'yellow'}>{`handoff ${item.handoff.usable ? 'usable' : 'unusable'} · obligations ${item.handoff.obligations_total}`}</Text>)
       for (const error of item.handoff.errors) rows.push(<Text key={`he:${error}`} color="yellow">{`  ✗ ${error}`}</Text>)
-      for (const warning of item.handoff.warnings) rows.push(<Text key={`hw:${warning}`} dimColor>{`  ! ${warning}`}</Text>)
+      for (const warning of item.handoff.warnings) rows.push(<Text key={`hw:${warning}`} color="yellow">{`  ! ${warning}`}</Text>)
     }
     if (item.verification) {
       const v = item.verification
       rows.push(<Text key="v">{`verify cov ${v.covered}/${v.total} · tests ${v.tests}${v.status_written ? ` · ${v.status_written}` : ''}`}</Text>)
     }
-    if (run.artifacts.decision_log) rows.push(<Text key="dl" dimColor>{`decision log ${run.artifacts.decision_log}`}</Text>)
+    if (run.artifacts.decision_log) rows.push(<Text key="dl">{`decision log ${run.artifacts.decision_log}`}</Text>)
   }
   return <Box flexDirection="column">{rows}</Box>
 }
@@ -193,7 +193,7 @@ function docsTab(el: Elements, model: PaneModel, actions: PaneActions) {
       <Text dimColor>{`${item.id} · ${item.run.id} · Enter로 읽기`}</Text>
       {list.map(([label, path]) => (
         <Button key={`doc:${path}`} plain onPress={() => actions.openDoc(path)}>
-          <Text bold>{label}</Text> <Text dimColor>{truncate(path, Math.max(12, model.bodyColumns - label.length - 4))}</Text>
+          <Text bold>{label}</Text> <Text>{truncate(path, Math.max(12, model.bodyColumns - label.length - 4))}</Text>
         </Button>
       ))}
     </Box>
@@ -208,7 +208,7 @@ export function renderPane(el: Elements, model: PaneModel, actions: PaneActions,
       <Button key="tab:items" hotkey="1" plain onPress={() => actions.showTab('items')}>Items</Button>
       <Button key="tab:run" hotkey="2" plain onPress={() => actions.showTab('run')}>Run</Button>
       <Button key="tab:docs" hotkey="3" plain onPress={() => actions.showTab('docs')}>Docs</Button>
-      <Text dimColor>{read.snapshot ? `  ${read.snapshot.generated_by.replace(/^spec-cycle@\S+ /, '')} · ${relative(read.snapshot.generated_at, now)}` : ''}</Text>
+      <Text>{read.snapshot ? `  ${read.snapshot.generated_by.replace(/^spec-cycle@\S+ /, '')} · ${relative(read.snapshot.generated_at, now)}` : ''}</Text>
       {read.isStale ? <Text color="yellow">⚠ 오래됨</Text> : null}
       {read.isBroken ? <Text color="yellow">⚠ JSON</Text> : null}
     </Box>
