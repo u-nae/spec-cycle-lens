@@ -38,6 +38,8 @@ type Lens = {
   bandOn: boolean
   suggestOn: boolean
   toastsOn: boolean
+  /** `staleWarning` off: no `⚠ 스냅숏 오래됨` is drawn and the minute check is not scheduled. */
+  staleOn: boolean
   editor: EditorMode
   script: string
   icons: string
@@ -84,12 +86,13 @@ async function reload($: EngineInterface, lens: Lens, full: boolean): Promise<vo
   if (!lens.paths) return
   const fs = fsPort($)
   if (!full && (await snapshotKey(fs, lens.paths)) === lens.current.key) return
-  lens.current = await readLens(fs, lens.paths, lens.current)
+  const current = await readLens(fs, lens.paths, lens.current)
+  lens.current = lens.staleOn || !current.isStale ? current : { ...current, isStale: false }
   await publish($, lens)
 }
 
 async function refreshStale($: EngineInterface, lens: Lens): Promise<void> {
-  if (lens.paths && lens.current.snapshot) {
+  if (lens.staleOn && lens.paths && lens.current.snapshot) {
     const stale = await isStale(fsPort($), lens.paths.cwd, lens.current.snapshot)
     if (stale !== lens.current.isStale) lens.current = { ...lens.current, isStale: stale }
   }
@@ -194,6 +197,7 @@ export const register: Register = (on, options) => {
     bandOn: options.band !== 'off',
     suggestOn: options.suggest !== 'off',
     toastsOn: options.toasts !== 'off',
+    staleOn: options.staleWarning !== 'off',
     editor: editorMode(options.openInEditor),
     script: typeof options.specCycleScript === 'string' ? options.specCycleScript.trim() : '',
     icons: typeof options.icons === 'string' ? options.icons : 'unicode',
@@ -218,9 +222,11 @@ export const register: Register = (on, options) => {
     lens.pinned = await readPin($, e.cwd)
     await reload($, lens, true)
     lens.tickTimer?.cancel()
-    lens.tickTimer = $.clock.every(TICK_MS, () => {
-      void refreshStale($, lens)
-    })
+    if (lens.staleOn) {
+      lens.tickTimer = $.clock.every(TICK_MS, () => {
+        void refreshStale($, lens)
+      })
+    }
     if (e.isInteractive) await suggest($, lens)
     return next(e)
   }).catch(($, e, next) => next(e))

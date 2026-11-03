@@ -151,3 +151,20 @@ test('with openInEditor on, o runs the editor candidates in order and falls back
   expect(copied).toEqual([])
   await ui.unmount()
 })
+
+test('information lines are drawn at full strength; only empty states and hints are dim', async ($, on) => {
+  fakeFs(on, {
+    [SNAPSHOT_FILE]: { text: JSON.stringify(prdSnapshot()), mtimeMs: 5000 },
+    [CONFIG_FILE]: { text: '', mtimeMs: 1 },
+  })
+  await start($, on)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const dimOf = async (text: RegExp) => (await ui.find({ type: 'Text', text }))?.props?.dimColor === true
+  expect(await dimOf(/의존성 대기: W05/)).toBe(false)
+  await ui.press({ key: 'item:W05' })
+  expect(await dimOf(/^status /)).toBe(false)
+  expect(await dimOf(/findings critical/)).toBe(false)
+  await ui.press({ key: 'tab:docs' })
+  expect(await dimOf(/Enter로 읽기|산출물이 아직 없습니다/)).toBe(true)
+  await ui.unmount()
+})

@@ -7,7 +7,7 @@
 이 mod는 프롬프트를 대신 제출하지 않고, 작업 항목 상태를 바꾸지 않으며, spec-cycle 파일을 쓰지 않습니다.
 spec-cycle은 이 mod 없이도 이전과 똑같이 동작합니다.
 
-- 확인한 환경: Claude Code 2.1.311 (mod API, early access), spec-cycle 0.4.0
+- 확인한 환경: Claude Code 2.1.312 (mod API, early access), spec-cycle 0.4.0
 - 요구 사항: Claude Code 2.1.287 이상, spec-cycle 0.4.0 이상
 
 ## 화면에서 보이는 것
@@ -19,7 +19,8 @@ spec-cycle은 이 mod 없이도 이전과 똑같이 동작합니다.
 ```
 
 단계 칩은 `대기`, `작성/비평 중`, `REVISE r1/2`, `질문 1개`, `한도 도달`, `READY`, `입력 변경됨`, `구현 중 · cov 3/8`,
-`완료`, `보류` 중 하나입니다. 스냅숏을 만든 뒤 기준 문서(PRD 등)가 바뀌면 `⚠ 스냅숏 오래됨`이 붙습니다.
+`완료`, `보류` 중 하나입니다. 스냅숏을 만든 뒤 기준 문서(PRD 등), 작업 항목 파일, 결정 기록 디렉터리가 바뀌면
+`⚠ 스냅숏 오래됨`이 붙습니다(설정 `staleWarning`으로 끌 수 있습니다).
 터미널 폭이 좁으면 미터, 제목 순으로 줄여 그립니다. band를 누르면 패널이 열립니다.
 
 **`/lens` 패널.** 탭 세 개입니다.
@@ -109,6 +110,7 @@ mod는 파일을 감시하지 않고 다음 때에만 `status.json`을 읽습니
 | `band` | `on`, `off` | `on` | 프롬프트 위 한 줄 |
 | `suggest` | `on`, `off` | `on` | 다음 명령 제안 |
 | `toasts` | `on`, `off` | `on` | 판정 변경 토스트 |
+| `staleWarning` | `on`, `off` | `on` | `⚠ 스냅숏 오래됨` 표시와 1분마다의 기준 문서 확인. 구현 중 PRD·결정 기록을 자주 고친다면 `off` |
 | `icons` | `unicode`, `nerd`, `emoji` | `unicode` | band와 패널의 글리프. Nerd Font를 쓰면 `nerd` |
 | `snapshotPath` | 프로젝트 기준 상대 경로 | `.spec-cycle/status.json` | `config.yaml`이 같은 디렉터리에 있어야 합니다 |
 | `openInEditor` | `off`, `auto`, `tmux-nvim` | `off` | Docs 탭의 `o`. `off`는 경로 복사만, `auto`는 창이 있는 `$VISUAL`/`$EDITOR` → `TERM_PROGRAM`에 맞는 `code`/`cursor` → macOS `open` 순, `tmux-nvim`은 새 tmux 창에 nvim |
@@ -124,7 +126,7 @@ mod는 파일을 감시하지 않고 다음 때에만 `status.json`을 읽습니
 | band가 안 보임 | `.spec-cycle/status.json`이 있는지. 없으면 spec-cycle 명령을 하나 실행하거나 위의 `status --json --write`를 돌립니다. `band`가 `off`인지도 확인 |
 | `/spec-cycle:init`이 제안됨 | 프로젝트에 `.spec-cycle/config.yaml`이 없는 상태입니다. spec-cycle을 쓰지 않는 프로젝트라면 `suggest`를 `off`로 두면 됩니다 |
 | `spec-cycle: 스냅숏 없음 · /lens refresh` | `config.yaml`은 있는데 `status.json`이 없습니다. spec-cycle 0.4.0 미만이면 올린 뒤 명령을 한 번 실행합니다 |
-| `⚠ 스냅숏 오래됨` | 스냅숏 뒤에 PRD 같은 기준 문서가 바뀌었습니다. 다음 spec-cycle 명령이 끝나면 사라집니다. `/lens refresh`로 지금 지울 수도 있습니다 |
+| `⚠ 스냅숏 오래됨` | 스냅숏 뒤에 `config.yaml`의 `baseline` 문서, `work_items` 파일, `decision_records` 디렉터리 중 하나가 바뀌었습니다. 다음 spec-cycle 명령이 끝나면 사라지고, `specCycleScript`를 설정해 두면 `/lens refresh`로 바로 지워집니다. 표시 자체를 끄려면 `staleWarning`을 `off` |
 | 명령이 끝났는데 band가 그대로 | 턴 종료 시 다시 읽습니다. 바로 보려면 `/lens refresh` |
 | 패널이 너무 좁음 | 패널은 터미널 폭에 맞춰 카드 테두리와 세부 줄을 생략합니다. 창을 넓히거나 데스크톱 앱에서 쓰면 전부 보입니다 |
 | 수정한 mod가 반영 안 됨 | `/reload-plugins` 또는 새 세션 |
